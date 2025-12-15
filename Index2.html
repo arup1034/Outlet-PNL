@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PNL Dashboard</title>
+  
+  <!-- SheetJS Library for Excel Export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+  <style>
+    body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f8f9fa; }
+    .container { max-width: 1250px; margin: auto; }
+    
+    /* Status Box */
+    #systemStatus {
+      padding: 10px; margin-bottom: 15px; border-radius: 5px; font-size: 14px;
+      display: none; border: 1px solid transparent;
+    }
+    .status-error { background-color: #f8d7da; color: #721c24; border-color: #f5c6cb; }
+    .status-success { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
+    .status-loading { background-color: #fff3cd; color: #856404; border-color: #ffeeba; }
+
+    /* Layout */
+    .section-box { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    h2 { color: #333; margin-top: 0; }
+    h3 { font-size: 1.1rem; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; margin-top: 0; }
+
+    .source-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 768px) { .source-grid { grid-template-columns: 1fr; } }
+    
+    .input-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 13px; }
+    input, select, textarea { padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+
+    /* Buttons */
+    button { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; font-weight: 600; font-size: 14px; transition: opacity 0.2s; }
+    button:hover { opacity: 0.9; }
+    .btn-blue { background-color: #007bff; color: white; }
+    .btn-gray { background-color: #6c757d; color: white; }
+    .btn-green { background-color: #28a745; color: white; }
+    .btn-yellow { background-color: #ffc107; color: #212529; }
+    .btn-teal { background-color: #17a2b8; color: white; }
+
+    /* Table */
+    .table-responsive { overflow-x: auto; border: 1px solid #ddd; border-radius: 4px; background: white; }
+    table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 13px; }
+    th, td { padding: 8px 10px; border: 1px solid #ddd; text-align: center; }
+    th { background-color: #e9ecef; position: sticky; top: 0; z-index: 10; font-weight: 600; }
+    tbody tr:hover { background-color: #f1f1f1; }
+    .total-row { background-color: #d1ecf1; font-weight: bold; }
+
+    /* Modal */
+    .modal { display: none; position: fixed; z-index: 999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
+    .modal-content { background: white; margin: 10% auto; padding: 20px; width: 400px; border-radius: 8px; }
+    .modal textarea { width: 100%; height: 150px; font-family: monospace; resize: vertical; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h2>PNL Dashboard</h2>
+  <div id="systemStatus"></div>
+
+  <!-- IMPORTS -->
+  <div class="section-box">
+    <h3>1. Import Data</h3>
+    <div class="source-grid">
+      <!-- File -->
+      <div>
+        <div class="input-group">
+          <label>Option A: Upload CSV</label>
+          <input type="file" id="fileInput" accept=".csv" style="width: 100%;">
+        </div>
+      </div>
+      <!-- URL -->
+      <div>
+        <div class="input-group">
+          <label>Option B: Google Sheet CSV Link</label>
+          <div style="display: flex; gap: 5px;">
+            <input type="text" id="urlInput" placeholder="Paste link..." style="flex: 1;">
+            <button class="btn-yellow" id="loadUrlBtn">Load Data</button>
+          </div>
+          <small style="color:#666; font-size:11px;">Paste your 'Published to web' CSV link here.</small>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="section-box">
+    <h3>2. Filters & Actions</h3>
+    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+      <div><label>Start Month</label><br><input type="month" id="startMonth"></div>
+      <div><label>End Month</label><br><input type="month" id="endMonth"></div>
+      <div>
+        <label>Type</label><br>
+        <select id="typeFilter" style="min-width: 120px;"><option value="all">All</option></select>
+      </div>
+      <div style="margin-left:auto; display:flex; gap:8px;">
+        <button class="btn-teal" onclick="openModal()">Filter Codes <span id="codeCountLabel"></span></button>
+        <button class="btn-blue" id="applyBtn">Apply</button>
+        <button class="btn-gray" id="resetBtn">Reset</button>
+        <button class="btn-green" onclick="exportToExcel()">Export Excel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-responsive">
+    <table id="dataTable">
+      <thead><tr id="tableHead"></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="codeModal" class="modal">
+  <div class="modal-content">
+    <h3>Paste Outlet Codes</h3>
+    <p style="margin-top:0; font-size:12px; color:#666;">Paste codes below (one per line, comma, or space).</p>
+    <textarea id="codeListInput" placeholder="OUT001&#10;OUT002&#10;..."></textarea>
+    <div style="text-align: right; margin-top: 10px;">
+      <button class="btn-gray" onclick="closeModal()">Cancel</button>
+      <button class="btn-blue" onclick="saveCodeFilter()">Set Filter</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// --- CONFIGURATION ---
+const tableColumns = [
+  'CODE','Outlet Name','Launching Date','SFT','Sales Revenue','Gp','Gp %','Other Income',
+  'Total Outlet Level Opex','% of Opex on Sales','Outlet level Gain/Loss',
+  'Operating Financing Cost(OFC)','Outlet level P/(L) After OFC'
+];
+const sumColumns = [
+  'Sales Revenue','Gp','Other Income','Total Outlet Level Opex',
+  'Outlet level Gain/Loss','Operating Financing Cost(OFC)','Outlet level P/(L) After OFC'
+];
+const currencyColumns = [
+  'SFT','Sales Revenue','Gp','Other Income','Total Outlet Level Opex',
+  'Outlet level Gain/Loss','Operating Financing Cost(OFC)','Outlet level P/(L) After OFC'
+];
+const percentColumns = ['Gp %','% of Opex on Sales'];
+
+// --- STATE ---
+let rawData = [];
+let activeCodes = [];
+let headerMap = {};
+
+// --- UTILS ---
+function setStatus(msg, type) {
+  const el = document.getElementById('systemStatus');
+  el.style.display = 'block';
+  el.className = 'status-' + type;
+  el.textContent = msg;
+  // Auto hide success after 5s
+  if(type === 'status-success') setTimeout(() => el.style.display='none', 5000);
+}
+
+function parseNum(val) {
+  if (typeof val === 'number') return val;
+  if (!val) return 0;
+  // Handle "(100)" as negative -100 common in accounting, and remove commas
+  let clean = val.toString().trim().replace(/,/g, '');
+  if (clean.startsWith('(') && clean.endsWith(')')) {
+    clean = '-' + clean.slice(1, -1);
+  }
+  return parseFloat(clean) || 0;
+}
+function formatMoney(val) {
+  return parseNum(val).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+function formatPercent(val) {
+  return parseNum(val).toFixed(0) + "%";
+}
+function formatDate(val) {
+  if (!val) return "";
+  if (!isNaN(val) && val > 20000) { // Excel serial
+    const d = new Date(Math.round((val - 25569)*86400*1000));
+    return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }).replace(/ /g,'-');
+  }
+  const d = new Date(val);
+  if (!isNaN(d.getTime())) {
+     return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }).replace(/ /g,'-');
+  }
+  return val;
+}
+function parseDate(val) {
+  if(!val) return null;
+  // Standardize "YYYY-MM"
+  if (/^\d{4}-\d{2}$/.test(val)) return new Date(val + "-01");
+  // Excel Serial
+  if (!isNaN(val) && val > 20000) return new Date(Math.round((val - 25569)*86400*1000));
+  // Standard Date
+  const d = new Date(val);
+  return isNaN(d) ? null : d;
+}
+
+// --- CORE CSV PROCESSOR ---
+function processCSV(text) {
+  if (!text || text.trim().length === 0) throw new Error("Received empty data.");
+  
+  const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
+  if (lines.length < 2) throw new Error("CSV has no data rows.");
+
+  const rawHeaders = parseCSVLine(lines[0]);
+  
+  // Create Header Map (Case Insensitive & Space Tolerant)
+  headerMap = {};
+  const lowerHeaders = rawHeaders.map(h => h.toLowerCase().replace(/\s/g, ''));
+  
+  tableColumns.forEach(col => {
+    const search = col.toLowerCase().replace(/\s/g, '');
+    const idx = lowerHeaders.indexOf(search);
+    if (idx !== -1) headerMap[col] = rawHeaders[idx];
+  });
+
+  // Identify Critical Columns
+  const monthIdx = lowerHeaders.findIndex(h => h.includes('month') || h==='date');
+  const typeIdx = lowerHeaders.indexOf('type');
+  // Try finding 'CODE' or 'OUTLET CODE'
+  const codeIdx = lowerHeaders.findIndex(h => h === 'code' || h === 'outletcode');
+  
+  if (monthIdx !== -1) headerMap['__MONTH__'] = rawHeaders[monthIdx];
+  if (typeIdx !== -1) headerMap['__TYPE__'] = rawHeaders[typeIdx];
+  if (codeIdx !== -1) headerMap['__CODE__'] = rawHeaders[codeIdx];
+  
+  // Validation
+  if (!headerMap['__CODE__']) console.warn("Missing 'CODE' column.");
+  if (!headerMap['__MONTH__']) console.warn("Missing 'Month' column.");
+
+  // Parse Rows
+  rawData = [];
+  for (let i = 1; i < lines.length; i++) {
+    const rowVals = parseCSVLine(lines[i]);
+    // Skip totally empty rows
+    if(rowVals.every(x => x === '')) continue;
+    
+    let obj = {};
+    rawHeaders.forEach((h, idx) => obj[h] = rowVals[idx] || "");
+    rawData.push(obj);
+  }
+
+  setStatus(`Successfully loaded ${rawData.length} records.`, "status-success");
+  populateTypeFilter();
+  applyFilters();
+}
+
+function parseCSVLine(text) {
+  // Regex to handle quoted CSV fields correctly
+  const matches = [];
+  // This regex matches: quoted fields OR unquoted fields (up to comma or end)
+  const regex = /(?: "([^"]*(?:""[^"]*)*)" | ([^",\r\n]*) )/g;
+  
+  // Split manually to handle edges
+  let ret = [''];
+  let i = 0;
+  let p = 0;
+  let s = true; // State: true=outside quotes, false=inside
+  for (let l of text) {
+    if ('"' === l) {
+      s = !s;
+      if ('"' === text[p - 1]) ret[i] += '"'; // Double quote escape
+    } else if (',' === l && s) {
+      l = ret[++i] = '';
+    } else {
+      ret[i] += l;
+    }
+    p++;
+  }
+  return ret.map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
+}
+
+// --- FETCHING LOGIC ---
+document.getElementById('fileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  setStatus("Reading local file...", "status-loading");
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try { processCSV(ev.target.result); } 
+    catch(err) { setStatus(err.message, "status-error"); }
+  };
+  reader.readAsText(file);
+});
+
+// HYBRID FETCH: Try Direct -> Fallback to Proxy
+document.getElementById('loadUrlBtn').addEventListener('click', async () => {
+  let url = document.getElementById('urlInput').value.trim();
+  if (!url) { setStatus("Please enter a URL.", "status-error"); return; }
+  
+  setStatus("Connecting...", "status-loading");
+  
+  // Attempt 1: Direct Fetch (Works for Published Sheets usually)
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Direct fetch failed");
+    const text = await res.text();
+    processCSV(text);
+  } catch (err) {
+    console.warn("Direct access failed, switching to Proxy...", err);
+    setStatus("Direct access blocked. Trying proxy...", "status-loading");
+    
+    // Attempt 2: AllOrigins Raw Proxy
+    // We use /raw to get CSV text, not JSON
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    
+    try {
+      const res2 = await fetch(proxyUrl);
+      if (!res2.ok) throw new Error("Proxy fetch failed");
+      const text2 = await res2.text();
+      processCSV(text2);
+    } catch (err2) {
+      console.error(err2);
+      setStatus("Failed to load. 1. Check link. 2. Ensure it is 'Published to Web'.", "status-error");
+    }
+  }
+});
+
+// --- FILTER & AGGREGATE ---
+function applyFilters() {
+  // If no data, show empty
+  if (rawData.length === 0) {
+    renderTable([]);
+    return;
+  }
+  
+  const start = document.getElementById('startMonth').value;
+  const end = document.getElementById('endMonth').value;
+  const typeVal = document.getElementById('typeFilter').value;
+  
+  const mKey = headerMap['__MONTH__'];
+  const tKey = headerMap['__TYPE__'];
+  const cKey = headerMap['__CODE__'];
+
+  let filtered = rawData.filter(row => {
+    // 1. Month Filter
+    if ((start || end) && mKey) {
+      const d = parseDate(row[mKey]);
+      if (d) {
+        if (start) {
+           const sDate = new Date(start + "-01");
+           if (d < sDate) return false;
+        }
+        if (end) {
+          const eParts = end.split('-');
+          // End of the selected month
+          const eDate = new Date(parseInt(eParts[0]), parseInt(eParts[1]), 0); 
+          if (d > eDate) return false;
+        }
+      }
+    }
+    // 2. Type Filter
+    if (typeVal !== 'all' && tKey) {
+      if ((row[tKey]||"").trim() !== typeVal) return false;
+    }
+    // 3. Code Filter
+    if (activeCodes.length > 0 && cKey) {
+      const rowCode = (row[cKey]||"").trim();
+      if (!activeCodes.includes(rowCode)) return false;
+    }
+    return true;
+  });
+
+  renderTable(aggregateData(filtered));
+}
+
+function aggregateData(rows) {
+  const cKey = headerMap['__CODE__'] || headerMap['Outlet Name'];
+  let groups = {};
+  
+  rows.forEach(row => {
+    // Group ID: Code or "UNKNOWN"
+    const id = (cKey && row[cKey]) ? row[cKey] : "UNKNOWN";
+    
+    if (!groups[id]) {
+      // Init with first row data
+      groups[id] = { ...row };
+      // Zero out sum columns
+      sumColumns.forEach(c => {
+        if(headerMap[c]) groups[id][headerMap[c]] = 0;
+      });
+    }
+    // Accumulate
+    sumColumns.forEach(c => {
+      if(headerMap[c]) {
+        groups[id][headerMap[c]] += parseNum(row[headerMap[c]]);
+      }
+    });
+  });
+
+  // Re-calculate Percentages on Totals
+  return Object.values(groups).map(row => {
+    const sales = parseNum(row[headerMap['Sales Revenue']]);
+    
+    // Gp %
+    if (headerMap['Gp %']) {
+      const gp = parseNum(row[headerMap['Gp']]);
+      row[headerMap['Gp %']] = sales !== 0 ? (gp/sales)*100 : 0;
+    }
+    // Opex %
+    if (headerMap['% of Opex on Sales']) {
+      const opex = parseNum(row[headerMap['Total Outlet Level Opex']]);
+      row[headerMap['% of Opex on Sales']] = sales !== 0 ? (opex/sales)*100 : 0;
+    }
+    return row;
+  });
+}
+
+// --- RENDER ---
+function renderTable(data) {
+  const tbody = document.querySelector('#dataTable tbody');
+  const thead = document.getElementById('tableHead');
+  tbody.innerHTML = ''; thead.innerHTML = '';
+  
+  if(data.length === 0) { 
+    tbody.innerHTML='<tr><td colspan="100%">No Data Matches Filters</td></tr>'; 
+    return; 
+  }
+
+  // Draw Header
+  tableColumns.forEach(c => {
+    let th = document.createElement('th'); th.textContent = c; thead.appendChild(th);
+  });
+
+  // Calc Grand Totals
+  let grand = {};
+  currencyColumns.forEach(c => grand[c] = 0);
+
+  // Draw Rows
+  data.forEach(row => {
+    let tr = document.createElement('tr');
+    tableColumns.forEach(col => {
+      let td = document.createElement('td');
+      let key = headerMap[col];
+      let val = key ? row[key] : "";
+      
+      if (col === 'Launching Date') val = formatDate(val);
+      else if (currencyColumns.includes(col)) {
+        if(key) grand[col] += parseNum(val);
+        val = formatMoney(val);
+      }
+      else if (percentColumns.includes(col)) val = formatPercent(val);
+      
+      td.textContent = val;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  // Draw Grand Total Row
+  let tr = document.createElement('tr');
+  tr.className = 'total-row';
+  tableColumns.forEach(col => {
+    let td = document.createElement('td');
+    if (col === 'Outlet Name') td.textContent = "GRAND TOTAL";
+    else if (currencyColumns.includes(col) && col !== 'SFT') td.textContent = formatMoney(grand[col]);
+    else if (col === 'Gp %') {
+      let s = grand['Sales Revenue'];
+      td.textContent = s ? ((grand['Gp']/s)*100).toFixed(0)+"%" : "0%";
+    }
+    else if (col === '% of Opex on Sales') {
+      let s = grand['Sales Revenue'];
+      td.textContent = s ? ((grand['Total Outlet Level Opex']/s)*100).toFixed(0)+"%" : "0%";
+    }
+    tr.appendChild(td);
+  });
+  tbody.appendChild(tr);
+}
+
+// --- CONTROLS ---
+document.getElementById('applyBtn').onclick = applyFilters;
+document.getElementById('typeFilter').onchange = applyFilters;
+
+document.getElementById('resetBtn').onclick = () => {
+  document.getElementById('startMonth').value = '';
+  document.getElementById('endMonth').value = '';
+  document.getElementById('typeFilter').value = 'all';
+  activeCodes = [];
+  document.getElementById('codeCountLabel').textContent = '';
+  document.getElementById('codeListInput').value = '';
+  renderTable(rawData); // Reset to full data
+};
+
+function populateTypeFilter() {
+  const sel = document.getElementById('typeFilter');
+  const key = headerMap['__TYPE__'];
+  sel.innerHTML = '<option value="all">All</option>';
+  if(!key) return;
+  const s = new Set();
+  rawData.forEach(r => { if(r[key]) s.add(r[key].trim()); });
+  [...s].sort().forEach(t => {
+    let o = document.createElement('option'); o.value=t; o.textContent=t; sel.appendChild(o);
+  });
+}
+
+// --- MODAL ---
+const modal = document.getElementById('codeModal');
+function openModal() { modal.style.display = "block"; }
+function closeModal() { modal.style.display = "none"; }
+function saveCodeFilter() {
+  const v = document.getElementById('codeListInput').value;
+  activeCodes = v.split(/[\n,\s]+/).map(s=>s.trim()).filter(s=>s);
+  document.getElementById('codeCountLabel').textContent = activeCodes.length ? `(${activeCodes.length})` : "";
+  closeModal();
+  applyFilters();
+}
+window.onclick = e => { if(e.target==modal) closeModal(); };
+
+// --- EXPORT ---
+function exportToExcel() {
+  const t = document.getElementById('dataTable');
+  if(!t || t.rows.length<2) return alert("No data to export.");
+  const wb = XLSX.utils.table_to_book(t, { sheet: "PNL" });
+  XLSX.writeFile(wb, "PNL_Dashboard_Export.xlsx");
+}
+</script>
+</body>
+</html>
