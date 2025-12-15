@@ -23,35 +23,36 @@
 
     /* Layout */
     .section-box { background: white; padding: 20px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-    h2 { color: #333; }
-    h3 { font-size: 1.1rem; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+    h2 { color: #333; margin-top: 0; }
+    h3 { font-size: 1.1rem; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; margin-top: 0; }
 
     .source-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
     @media (max-width: 768px) { .source-grid { grid-template-columns: 1fr; } }
     
     .input-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 13px; }
-    input, select, textarea { padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; }
+    input, select, textarea { padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
 
     /* Buttons */
-    button { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; font-weight: 600; font-size: 14px; }
-    .btn-blue { background-color: #007bff; color: white; } .btn-blue:hover { background-color: #0056b3; }
-    .btn-gray { background-color: #6c757d; color: white; } .btn-gray:hover { background-color: #545b62; }
-    .btn-green { background-color: #28a745; color: white; } .btn-green:hover { background-color: #218838; }
-    .btn-yellow { background-color: #ffc107; color: #212529; } .btn-yellow:hover { background-color: #e0a800; }
-    .btn-teal { background-color: #17a2b8; color: white; } .btn-teal:hover { background-color: #138496; }
+    button { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; font-weight: 600; font-size: 14px; transition: opacity 0.2s; }
+    button:hover { opacity: 0.9; }
+    .btn-blue { background-color: #007bff; color: white; }
+    .btn-gray { background-color: #6c757d; color: white; }
+    .btn-green { background-color: #28a745; color: white; }
+    .btn-yellow { background-color: #ffc107; color: #212529; }
+    .btn-teal { background-color: #17a2b8; color: white; }
 
     /* Table */
-    .table-responsive { overflow-x: auto; border: 1px solid #ddd; border-radius: 4px; }
+    .table-responsive { overflow-x: auto; border: 1px solid #ddd; border-radius: 4px; background: white; }
     table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 13px; }
-    th, td { padding: 10px; border: 1px solid #ddd; text-align: center; }
-    th { background-color: #e9ecef; position: sticky; top: 0; }
+    th, td { padding: 8px 10px; border: 1px solid #ddd; text-align: center; }
+    th { background-color: #e9ecef; position: sticky; top: 0; z-index: 10; font-weight: 600; }
     tbody tr:hover { background-color: #f1f1f1; }
     .total-row { background-color: #d1ecf1; font-weight: bold; }
 
     /* Modal */
     .modal { display: none; position: fixed; z-index: 999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); }
     .modal-content { background: white; margin: 10% auto; padding: 20px; width: 400px; border-radius: 8px; }
-    .modal textarea { width: 100%; height: 150px; font-family: monospace; }
+    .modal textarea { width: 100%; height: 150px; font-family: monospace; resize: vertical; }
   </style>
 </head>
 <body>
@@ -79,7 +80,7 @@
             <input type="text" id="urlInput" placeholder="Paste link..." style="flex: 1;">
             <button class="btn-yellow" id="loadUrlBtn">Load Data</button>
           </div>
-          <small style="color:#666; font-size:11px;">Supports 'Published to Web' links.</small>
+          <small style="color:#666; font-size:11px;">Paste your 'Published to web' CSV link here.</small>
         </div>
       </div>
     </div>
@@ -93,7 +94,7 @@
       <div><label>End Month</label><br><input type="month" id="endMonth"></div>
       <div>
         <label>Type</label><br>
-        <select id="typeFilter" style="min-width: 100px;"><option value="all">All</option></select>
+        <select id="typeFilter" style="min-width: 120px;"><option value="all">All</option></select>
       </div>
       <div style="margin-left:auto; display:flex; gap:8px;">
         <button class="btn-teal" onclick="openModal()">Filter Codes <span id="codeCountLabel"></span></button>
@@ -117,7 +118,8 @@
 <div id="codeModal" class="modal">
   <div class="modal-content">
     <h3>Paste Outlet Codes</h3>
-    <textarea id="codeListInput" placeholder="Enter codes here..."></textarea>
+    <p style="margin-top:0; font-size:12px; color:#666;">Paste codes below (one per line, comma, or space).</p>
+    <textarea id="codeListInput" placeholder="OUT001&#10;OUT002&#10;..."></textarea>
     <div style="text-align: right; margin-top: 10px;">
       <button class="btn-gray" onclick="closeModal()">Cancel</button>
       <button class="btn-blue" onclick="saveCodeFilter()">Set Filter</button>
@@ -153,12 +155,19 @@ function setStatus(msg, type) {
   el.style.display = 'block';
   el.className = 'status-' + type;
   el.textContent = msg;
+  // Auto hide success after 5s
+  if(type === 'status-success') setTimeout(() => el.style.display='none', 5000);
 }
 
 function parseNum(val) {
   if (typeof val === 'number') return val;
   if (!val) return 0;
-  return parseFloat(val.toString().replace(/,/g, '')) || 0;
+  // Handle "(100)" as negative -100 common in accounting, and remove commas
+  let clean = val.toString().trim().replace(/,/g, '');
+  if (clean.startsWith('(') && clean.endsWith(')')) {
+    clean = '-' + clean.slice(1, -1);
+  }
+  return parseFloat(clean) || 0;
 }
 function formatMoney(val) {
   return parseNum(val).toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -180,22 +189,25 @@ function formatDate(val) {
 }
 function parseDate(val) {
   if(!val) return null;
+  // Standardize "YYYY-MM"
   if (/^\d{4}-\d{2}$/.test(val)) return new Date(val + "-01");
+  // Excel Serial
   if (!isNaN(val) && val > 20000) return new Date(Math.round((val - 25569)*86400*1000));
+  // Standard Date
   const d = new Date(val);
   return isNaN(d) ? null : d;
 }
 
-// --- CSV PARSER ---
+// --- CORE CSV PROCESSOR ---
 function processCSV(text) {
-  if (!text || text.trim().length === 0) throw new Error("Empty data");
+  if (!text || text.trim().length === 0) throw new Error("Received empty data.");
   
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
-  if (lines.length < 2) throw new Error("No data rows found");
+  if (lines.length < 2) throw new Error("CSV has no data rows.");
 
   const rawHeaders = parseCSVLine(lines[0]);
   
-  // Map Headers Case-Insensitive
+  // Create Header Map (Case Insensitive & Space Tolerant)
   headerMap = {};
   const lowerHeaders = rawHeaders.map(h => h.toLowerCase().replace(/\s/g, ''));
   
@@ -205,48 +217,67 @@ function processCSV(text) {
     if (idx !== -1) headerMap[col] = rawHeaders[idx];
   });
 
-  // Critical Columns
+  // Identify Critical Columns
   const monthIdx = lowerHeaders.findIndex(h => h.includes('month') || h==='date');
   const typeIdx = lowerHeaders.indexOf('type');
-  const codeIdx = lowerHeaders.indexOf('code') !== -1 ? lowerHeaders.indexOf('code') : lowerHeaders.indexOf('outletcode');
+  // Try finding 'CODE' or 'OUTLET CODE'
+  const codeIdx = lowerHeaders.findIndex(h => h === 'code' || h === 'outletcode');
   
   if (monthIdx !== -1) headerMap['__MONTH__'] = rawHeaders[monthIdx];
   if (typeIdx !== -1) headerMap['__TYPE__'] = rawHeaders[typeIdx];
   if (codeIdx !== -1) headerMap['__CODE__'] = rawHeaders[codeIdx];
-  else setStatus("Warning: 'CODE' column not found. Code filter may fail.", "status-error");
+  
+  // Validation
+  if (!headerMap['__CODE__']) console.warn("Missing 'CODE' column.");
+  if (!headerMap['__MONTH__']) console.warn("Missing 'Month' column.");
 
   // Parse Rows
   rawData = [];
   for (let i = 1; i < lines.length; i++) {
     const rowVals = parseCSVLine(lines[i]);
+    // Skip totally empty rows
+    if(rowVals.every(x => x === '')) continue;
+    
     let obj = {};
     rawHeaders.forEach((h, idx) => obj[h] = rowVals[idx] || "");
     rawData.push(obj);
   }
 
-  setStatus(`Loaded ${rawData.length} rows.`, "success");
+  setStatus(`Successfully loaded ${rawData.length} records.`, "status-success");
   populateTypeFilter();
   applyFilters();
 }
 
 function parseCSVLine(text) {
-  let ret = [''], i = 0, p = 0, s = true;
+  // Regex to handle quoted CSV fields correctly
+  const matches = [];
+  // This regex matches: quoted fields OR unquoted fields (up to comma or end)
+  const regex = /(?: "([^"]*(?:""[^"]*)*)" | ([^",\r\n]*) )/g;
+  
+  // Split manually to handle edges
+  let ret = [''];
+  let i = 0;
+  let p = 0;
+  let s = true; // State: true=outside quotes, false=inside
   for (let l of text) {
     if ('"' === l) {
       s = !s;
-      if ('"' === text[p - 1]) ret[i] += '"';
-    } else if (',' === l && s) l = ret[++i] = '';
-    else ret[i] += l;
+      if ('"' === text[p - 1]) ret[i] += '"'; // Double quote escape
+    } else if (',' === l && s) {
+      l = ret[++i] = '';
+    } else {
+      ret[i] += l;
+    }
     p++;
   }
-  return ret.map(c => c.replace(/^"|"$/g, '').trim());
+  return ret.map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
 }
 
-// --- HANDLERS ---
+// --- FETCHING LOGIC ---
 document.getElementById('fileInput').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
-  setStatus("Reading file...", "loading");
+  setStatus("Reading local file...", "status-loading");
   const reader = new FileReader();
   reader.onload = ev => {
     try { processCSV(ev.target.result); } 
@@ -255,32 +286,46 @@ document.getElementById('fileInput').addEventListener('change', e => {
   reader.readAsText(file);
 });
 
-document.getElementById('loadUrlBtn').addEventListener('click', () => {
+// HYBRID FETCH: Try Direct -> Fallback to Proxy
+document.getElementById('loadUrlBtn').addEventListener('click', async () => {
   let url = document.getElementById('urlInput').value.trim();
-  if (!url) { setStatus("Enter URL", "status-error"); return; }
+  if (!url) { setStatus("Please enter a URL.", "status-error"); return; }
   
-  setStatus("Fetching via Proxy...", "loading");
+  setStatus("Connecting...", "status-loading");
   
-  // Use AllOrigins Proxy to bypass CORS on hosted sites
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-  
-  fetch(proxyUrl)
-    .then(res => {
-      if (!res.ok) throw new Error("Proxy Error");
-      return res.json();
-    })
-    .then(data => {
-      // AllOrigins returns data in 'contents' property
-      processCSV(data.contents);
-    })
-    .catch(err => {
-      console.error(err);
-      setStatus("Fetch Failed. Ensure link is correct CSV.", "status-error");
-    });
+  // Attempt 1: Direct Fetch (Works for Published Sheets usually)
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Direct fetch failed");
+    const text = await res.text();
+    processCSV(text);
+  } catch (err) {
+    console.warn("Direct access failed, switching to Proxy...", err);
+    setStatus("Direct access blocked. Trying proxy...", "status-loading");
+    
+    // Attempt 2: AllOrigins Raw Proxy
+    // We use /raw to get CSV text, not JSON
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+    
+    try {
+      const res2 = await fetch(proxyUrl);
+      if (!res2.ok) throw new Error("Proxy fetch failed");
+      const text2 = await res2.text();
+      processCSV(text2);
+    } catch (err2) {
+      console.error(err2);
+      setStatus("Failed to load. 1. Check link. 2. Ensure it is 'Published to Web'.", "status-error");
+    }
+  }
 });
 
+// --- FILTER & AGGREGATE ---
 function applyFilters() {
-  if (rawData.length === 0) return;
+  // If no data, show empty
+  if (rawData.length === 0) {
+    renderTable([]);
+    return;
+  }
   
   const start = document.getElementById('startMonth').value;
   const end = document.getElementById('endMonth').value;
@@ -291,25 +336,30 @@ function applyFilters() {
   const cKey = headerMap['__CODE__'];
 
   let filtered = rawData.filter(row => {
-    // Month
+    // 1. Month Filter
     if ((start || end) && mKey) {
       const d = parseDate(row[mKey]);
       if (d) {
-        if (start && d < new Date(start + "-01")) return false;
+        if (start) {
+           const sDate = new Date(start + "-01");
+           if (d < sDate) return false;
+        }
         if (end) {
           const eParts = end.split('-');
-          const eDate = new Date(parseInt(eParts[0]), parseInt(eParts[1]), 0); // End of that month
+          // End of the selected month
+          const eDate = new Date(parseInt(eParts[0]), parseInt(eParts[1]), 0); 
           if (d > eDate) return false;
         }
       }
     }
-    // Type
+    // 2. Type Filter
     if (typeVal !== 'all' && tKey) {
       if ((row[tKey]||"").trim() !== typeVal) return false;
     }
-    // Code
+    // 3. Code Filter
     if (activeCodes.length > 0 && cKey) {
-      if (!activeCodes.includes((row[cKey]||"").trim())) return false;
+      const rowCode = (row[cKey]||"").trim();
+      if (!activeCodes.includes(rowCode)) return false;
     }
     return true;
   });
@@ -322,49 +372,64 @@ function aggregateData(rows) {
   let groups = {};
   
   rows.forEach(row => {
-    const id = row[cKey] || "UNKNOWN";
+    // Group ID: Code or "UNKNOWN"
+    const id = (cKey && row[cKey]) ? row[cKey] : "UNKNOWN";
+    
     if (!groups[id]) {
+      // Init with first row data
       groups[id] = { ...row };
+      // Zero out sum columns
       sumColumns.forEach(c => {
         if(headerMap[c]) groups[id][headerMap[c]] = 0;
       });
     }
+    // Accumulate
     sumColumns.forEach(c => {
-      if(headerMap[c]) groups[id][headerMap[c]] += parseNum(row[headerMap[c]]);
+      if(headerMap[c]) {
+        groups[id][headerMap[c]] += parseNum(row[headerMap[c]]);
+      }
     });
   });
 
+  // Re-calculate Percentages on Totals
   return Object.values(groups).map(row => {
-    // Recalc %
     const sales = parseNum(row[headerMap['Sales Revenue']]);
+    
+    // Gp %
     if (headerMap['Gp %']) {
       const gp = parseNum(row[headerMap['Gp']]);
-      row[headerMap['Gp %']] = sales ? (gp/sales)*100 : 0;
+      row[headerMap['Gp %']] = sales !== 0 ? (gp/sales)*100 : 0;
     }
+    // Opex %
     if (headerMap['% of Opex on Sales']) {
       const opex = parseNum(row[headerMap['Total Outlet Level Opex']]);
-      row[headerMap['% of Opex on Sales']] = sales ? (opex/sales)*100 : 0;
+      row[headerMap['% of Opex on Sales']] = sales !== 0 ? (opex/sales)*100 : 0;
     }
     return row;
   });
 }
 
+// --- RENDER ---
 function renderTable(data) {
   const tbody = document.querySelector('#dataTable tbody');
   const thead = document.getElementById('tableHead');
   tbody.innerHTML = ''; thead.innerHTML = '';
   
-  if(data.length === 0) { tbody.innerHTML='<tr><td>No Data</td></tr>'; return; }
+  if(data.length === 0) { 
+    tbody.innerHTML='<tr><td colspan="100%">No Data Matches Filters</td></tr>'; 
+    return; 
+  }
 
-  // Headers
+  // Draw Header
   tableColumns.forEach(c => {
     let th = document.createElement('th'); th.textContent = c; thead.appendChild(th);
   });
 
-  // Totals
+  // Calc Grand Totals
   let grand = {};
   currencyColumns.forEach(c => grand[c] = 0);
 
+  // Draw Rows
   data.forEach(row => {
     let tr = document.createElement('tr');
     tableColumns.forEach(col => {
@@ -385,7 +450,7 @@ function renderTable(data) {
     tbody.appendChild(tr);
   });
 
-  // Grand Total Row
+  // Draw Grand Total Row
   let tr = document.createElement('tr');
   tr.className = 'total-row';
   tableColumns.forEach(col => {
@@ -405,17 +470,19 @@ function renderTable(data) {
   tbody.appendChild(tr);
 }
 
-// --- UI EVENT BINDING ---
+// --- CONTROLS ---
 document.getElementById('applyBtn').onclick = applyFilters;
+document.getElementById('typeFilter').onchange = applyFilters;
+
 document.getElementById('resetBtn').onclick = () => {
   document.getElementById('startMonth').value = '';
   document.getElementById('endMonth').value = '';
   document.getElementById('typeFilter').value = 'all';
   activeCodes = [];
   document.getElementById('codeCountLabel').textContent = '';
-  renderTable(rawData);
+  document.getElementById('codeListInput').value = '';
+  renderTable(rawData); // Reset to full data
 };
-document.getElementById('typeFilter').onchange = applyFilters;
 
 function populateTypeFilter() {
   const sel = document.getElementById('typeFilter');
@@ -429,7 +496,7 @@ function populateTypeFilter() {
   });
 }
 
-// Modal
+// --- MODAL ---
 const modal = document.getElementById('codeModal');
 function openModal() { modal.style.display = "block"; }
 function closeModal() { modal.style.display = "none"; }
@@ -442,10 +509,12 @@ function saveCodeFilter() {
 }
 window.onclick = e => { if(e.target==modal) closeModal(); };
 
+// --- EXPORT ---
 function exportToExcel() {
   const t = document.getElementById('dataTable');
-  if(!t || t.rows.length<2) return alert("No data");
-  XLSX.writeFile(XLSX.utils.table_to_book(t), "PNL_Dashboard.xlsx");
+  if(!t || t.rows.length<2) return alert("No data to export.");
+  const wb = XLSX.utils.table_to_book(t, { sheet: "PNL" });
+  XLSX.writeFile(wb, "PNL_Dashboard_Export.xlsx");
 }
 </script>
 </body>
