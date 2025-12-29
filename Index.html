@@ -44,8 +44,20 @@
     /* Table */
     .table-responsive { overflow-x: auto; border: 1px solid #ddd; border-radius: 4px; background: white; }
     table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 13px; }
+    
     th, td { padding: 8px 10px; border: 1px solid #ddd; text-align: center; }
-    th { background-color: #e9ecef; position: sticky; top: 0; z-index: 10; font-weight: 600; }
+    
+    /* Sorting Styles for Headers */
+    th { 
+      background-color: #e9ecef; 
+      position: sticky; top: 0; z-index: 10; font-weight: 600;
+      cursor: pointer; /* Clickable cursor */
+      user-select: none; /* Prevent text selection while clicking */
+      transition: background-color 0.2s;
+    }
+    th:hover { background-color: #dbe0e5; }
+    th .sort-icon { font-size: 10px; margin-left: 5px; color: #666; }
+
     tbody tr:hover { background-color: #f1f1f1; }
     .total-row { background-color: #d1ecf1; font-weight: bold; }
 
@@ -148,6 +160,8 @@ const percentColumns = ['Gp %','% of Opex on Sales'];
 let rawData = [];
 let activeCodes = [];
 let headerMap = {};
+let currentTableData = []; // Store aggregated data for sorting
+let sortState = { col: null, dir: 'desc' }; // Default sort state
 
 // --- UTILS ---
 function setStatus(msg, type) {
@@ -155,15 +169,13 @@ function setStatus(msg, type) {
   el.style.display = 'block';
   el.className = 'status-' + type;
   el.textContent = msg;
-  // Auto hide success after 5s
   if(type === 'status-success') setTimeout(() => el.style.display='none', 5000);
 }
 
 function parseNum(val) {
   if (typeof val === 'number') return val;
   if (!val) return 0;
-  // Handle "(100)" as negative -100 common in accounting, and remove commas
-  let clean = val.toString().trim().replace(/,/g, '');
+  let clean = val.toString().trim().replace(/,/g, '').replace(/%/g, '');
   if (clean.startsWith('(') && clean.endsWith(')')) {
     clean = '-' + clean.slice(1, -1);
   }
@@ -177,7 +189,7 @@ function formatPercent(val) {
 }
 function formatDate(val) {
   if (!val) return "";
-  if (!isNaN(val) && val > 20000) { // Excel serial
+  if (!isNaN(val) && val > 20000) { 
     const d = new Date(Math.round((val - 25569)*86400*1000));
     return d.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' }).replace(/ /g,'-');
   }
@@ -188,26 +200,24 @@ function formatDate(val) {
   return val;
 }
 function parseDate(val) {
-  if(!val) return null;
-  // Standardize "YYYY-MM"
-  if (/^\d{4}-\d{2}$/.test(val)) return new Date(val + "-01");
-  // Excel Serial
-  if (!isNaN(val) && val > 20000) return new Date(Math.round((val - 25569)*86400*1000));
-  // Standard Date
+  if(!val) return 0; // Return 0 for sorting comparison
+  // ISO
+  if (/^\d{4}-\d{2}$/.test(val)) return new Date(val + "-01").getTime();
+  // Excel
+  if (!isNaN(val) && val > 20000) return new Date(Math.round((val - 25569)*86400*1000)).getTime();
+  // String
   const d = new Date(val);
-  return isNaN(d) ? null : d;
+  return isNaN(d) ? 0 : d.getTime();
 }
 
-// --- CORE CSV PROCESSOR ---
+// --- CSV PROCESSOR ---
 function processCSV(text) {
   if (!text || text.trim().length === 0) throw new Error("Received empty data.");
-  
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== "");
   if (lines.length < 2) throw new Error("CSV has no data rows.");
 
   const rawHeaders = parseCSVLine(lines[0]);
   
-  // Create Header Map (Case Insensitive & Space Tolerant)
   headerMap = {};
   const lowerHeaders = rawHeaders.map(h => h.toLowerCase().replace(/\s/g, ''));
   
@@ -217,27 +227,21 @@ function processCSV(text) {
     if (idx !== -1) headerMap[col] = rawHeaders[idx];
   });
 
-  // Identify Critical Columns
   const monthIdx = lowerHeaders.findIndex(h => h.includes('month') || h==='date');
   const typeIdx = lowerHeaders.indexOf('type');
-  // Try finding 'CODE' or 'OUTLET CODE'
   const codeIdx = lowerHeaders.findIndex(h => h === 'code' || h === 'outletcode');
   
   if (monthIdx !== -1) headerMap['__MONTH__'] = rawHeaders[monthIdx];
   if (typeIdx !== -1) headerMap['__TYPE__'] = rawHeaders[typeIdx];
   if (codeIdx !== -1) headerMap['__CODE__'] = rawHeaders[codeIdx];
   
-  // Validation
   if (!headerMap['__CODE__']) console.warn("Missing 'CODE' column.");
   if (!headerMap['__MONTH__']) console.warn("Missing 'Month' column.");
 
-  // Parse Rows
   rawData = [];
   for (let i = 1; i < lines.length; i++) {
     const rowVals = parseCSVLine(lines[i]);
-    // Skip totally empty rows
     if(rowVals.every(x => x === '')) continue;
-    
     let obj = {};
     rawHeaders.forEach((h, idx) => obj[h] = rowVals[idx] || "");
     rawData.push(obj);
@@ -249,31 +253,19 @@ function processCSV(text) {
 }
 
 function parseCSVLine(text) {
-  // Regex to handle quoted CSV fields correctly
-  const matches = [];
-  // This regex matches: quoted fields OR unquoted fields (up to comma or end)
-  const regex = /(?: "([^"]*(?:""[^"]*)*)" | ([^",\r\n]*) )/g;
-  
-  // Split manually to handle edges
-  let ret = [''];
-  let i = 0;
-  let p = 0;
-  let s = true; // State: true=outside quotes, false=inside
+  let ret = [''], i = 0, p = 0, s = true;
   for (let l of text) {
     if ('"' === l) {
       s = !s;
-      if ('"' === text[p - 1]) ret[i] += '"'; // Double quote escape
-    } else if (',' === l && s) {
-      l = ret[++i] = '';
-    } else {
-      ret[i] += l;
-    }
+      if ('"' === text[p - 1]) ret[i] += '"';
+    } else if (',' === l && s) l = ret[++i] = '';
+    else ret[i] += l;
     p++;
   }
   return ret.map(c => c.replace(/^"|"$/g, '').replace(/""/g, '"').trim());
 }
 
-// --- FETCHING LOGIC ---
+// --- FETCHING ---
 document.getElementById('fileInput').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -286,27 +278,18 @@ document.getElementById('fileInput').addEventListener('change', e => {
   reader.readAsText(file);
 });
 
-// HYBRID FETCH: Try Direct -> Fallback to Proxy
 document.getElementById('loadUrlBtn').addEventListener('click', async () => {
   let url = document.getElementById('urlInput').value.trim();
   if (!url) { setStatus("Please enter a URL.", "status-error"); return; }
-  
   setStatus("Connecting...", "status-loading");
-  
-  // Attempt 1: Direct Fetch (Works for Published Sheets usually)
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error("Direct fetch failed");
     const text = await res.text();
     processCSV(text);
   } catch (err) {
-    console.warn("Direct access failed, switching to Proxy...", err);
     setStatus("Direct access blocked. Trying proxy...", "status-loading");
-    
-    // Attempt 2: AllOrigins Raw Proxy
-    // We use /raw to get CSV text, not JSON
     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    
     try {
       const res2 = await fetch(proxyUrl);
       if (!res2.ok) throw new Error("Proxy fetch failed");
@@ -314,16 +297,16 @@ document.getElementById('loadUrlBtn').addEventListener('click', async () => {
       processCSV(text2);
     } catch (err2) {
       console.error(err2);
-      setStatus("Failed to load. 1. Check link. 2. Ensure it is 'Published to Web'.", "status-error");
+      setStatus("Failed to load. Check link.", "status-error");
     }
   }
 });
 
 // --- FILTER & AGGREGATE ---
 function applyFilters() {
-  // If no data, show empty
   if (rawData.length === 0) {
-    renderTable([]);
+    currentTableData = [];
+    renderTable();
     return;
   }
   
@@ -336,35 +319,32 @@ function applyFilters() {
   const cKey = headerMap['__CODE__'];
 
   let filtered = rawData.filter(row => {
-    // 1. Month Filter
     if ((start || end) && mKey) {
       const d = parseDate(row[mKey]);
       if (d) {
-        if (start) {
-           const sDate = new Date(start + "-01");
-           if (d < sDate) return false;
-        }
+        if (start && d < new Date(start + "-01").getTime()) return false;
         if (end) {
           const eParts = end.split('-');
-          // End of the selected month
-          const eDate = new Date(parseInt(eParts[0]), parseInt(eParts[1]), 0); 
+          const eDate = new Date(parseInt(eParts[0]), parseInt(eParts[1]), 0).getTime(); 
           if (d > eDate) return false;
         }
       }
     }
-    // 2. Type Filter
     if (typeVal !== 'all' && tKey) {
       if ((row[tKey]||"").trim() !== typeVal) return false;
     }
-    // 3. Code Filter
     if (activeCodes.length > 0 && cKey) {
-      const rowCode = (row[cKey]||"").trim();
-      if (!activeCodes.includes(rowCode)) return false;
+      if (!activeCodes.includes((row[cKey]||"").trim())) return false;
     }
     return true;
   });
 
-  renderTable(aggregateData(filtered));
+  currentTableData = aggregateData(filtered);
+  // Re-apply current sort if active
+  if (sortState.col) {
+    applySortLogic();
+  }
+  renderTable();
 }
 
 function aggregateData(rows) {
@@ -372,35 +352,24 @@ function aggregateData(rows) {
   let groups = {};
   
   rows.forEach(row => {
-    // Group ID: Code or "UNKNOWN"
     const id = (cKey && row[cKey]) ? row[cKey] : "UNKNOWN";
-    
     if (!groups[id]) {
-      // Init with first row data
       groups[id] = { ...row };
-      // Zero out sum columns
       sumColumns.forEach(c => {
         if(headerMap[c]) groups[id][headerMap[c]] = 0;
       });
     }
-    // Accumulate
     sumColumns.forEach(c => {
-      if(headerMap[c]) {
-        groups[id][headerMap[c]] += parseNum(row[headerMap[c]]);
-      }
+      if(headerMap[c]) groups[id][headerMap[c]] += parseNum(row[headerMap[c]]);
     });
   });
 
-  // Re-calculate Percentages on Totals
   return Object.values(groups).map(row => {
     const sales = parseNum(row[headerMap['Sales Revenue']]);
-    
-    // Gp %
     if (headerMap['Gp %']) {
       const gp = parseNum(row[headerMap['Gp']]);
       row[headerMap['Gp %']] = sales !== 0 ? (gp/sales)*100 : 0;
     }
-    // Opex %
     if (headerMap['% of Opex on Sales']) {
       const opex = parseNum(row[headerMap['Total Outlet Level Opex']]);
       row[headerMap['% of Opex on Sales']] = sales !== 0 ? (opex/sales)*100 : 0;
@@ -409,20 +378,85 @@ function aggregateData(rows) {
   });
 }
 
+// --- SORTING LOGIC ---
+function handleSort(colName) {
+  if (sortState.col === colName) {
+    // Toggle direction
+    sortState.dir = sortState.dir === 'desc' ? 'asc' : 'desc';
+  } else {
+    // New column, default to desc for numbers/dates, asc for text? 
+    // Let's default to desc (Largest to Smallest) as requested mostly for numbers
+    sortState.col = colName;
+    sortState.dir = 'desc';
+  }
+  applySortLogic();
+  renderTable();
+}
+
+function applySortLogic() {
+  if (!sortState.col || currentTableData.length === 0) return;
+
+  const col = sortState.col;
+  const key = headerMap[col]; // This maps Display Name -> CSV Header
+  
+  // Identify type of column
+  const isNum = currencyColumns.includes(col) || percentColumns.includes(col) || col === 'SFT';
+  const isDate = col === 'Launching Date';
+
+  currentTableData.sort((a, b) => {
+    let valA = a[key];
+    let valB = b[key];
+
+    if (isNum) {
+      valA = parseNum(valA);
+      valB = parseNum(valB);
+    } else if (isDate) {
+      valA = parseDate(valA);
+      valB = parseDate(valB);
+    } else {
+      valA = (valA || "").toString().toLowerCase();
+      valB = (valB || "").toString().toLowerCase();
+    }
+
+    if (valA < valB) return sortState.dir === 'asc' ? -1 : 1;
+    if (valA > valB) return sortState.dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+}
+
 // --- RENDER ---
-function renderTable(data) {
+function renderTable() {
   const tbody = document.querySelector('#dataTable tbody');
   const thead = document.getElementById('tableHead');
   tbody.innerHTML = ''; thead.innerHTML = '';
   
-  if(data.length === 0) { 
+  if(currentTableData.length === 0) { 
     tbody.innerHTML='<tr><td colspan="100%">No Data Matches Filters</td></tr>'; 
     return; 
   }
 
-  // Draw Header
+  // Draw Header with Sort Events
   tableColumns.forEach(c => {
-    let th = document.createElement('th'); th.textContent = c; thead.appendChild(th);
+    let th = document.createElement('th');
+    th.onclick = () => handleSort(c);
+    
+    // Header Text
+    let textSpan = document.createElement('span');
+    textSpan.textContent = c;
+    th.appendChild(textSpan);
+
+    // Sort Arrow
+    if (sortState.col === c) {
+      let arrow = document.createElement('span');
+      arrow.className = 'sort-icon';
+      arrow.textContent = sortState.dir === 'asc' ? '▲' : '▼';
+      th.appendChild(arrow);
+    } else {
+      // Optional: Show faint placeholder or nothing
+    }
+
+    th.title = "Click to sort";
+    thead.appendChild(th);
   });
 
   // Calc Grand Totals
@@ -430,7 +464,7 @@ function renderTable(data) {
   currencyColumns.forEach(c => grand[c] = 0);
 
   // Draw Rows
-  data.forEach(row => {
+  currentTableData.forEach(row => {
     let tr = document.createElement('tr');
     tableColumns.forEach(col => {
       let td = document.createElement('td');
@@ -479,9 +513,10 @@ document.getElementById('resetBtn').onclick = () => {
   document.getElementById('endMonth').value = '';
   document.getElementById('typeFilter').value = 'all';
   activeCodes = [];
+  sortState = { col: null, dir: 'desc' }; // Reset sort
   document.getElementById('codeCountLabel').textContent = '';
   document.getElementById('codeListInput').value = '';
-  renderTable(rawData); // Reset to full data
+  applyFilters(); // Re-runs aggregation and rendering
 };
 
 function populateTypeFilter() {
