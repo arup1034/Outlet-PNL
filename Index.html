@@ -95,7 +95,7 @@
 <!-- 1. LOGIN SCREEN -->
 <div id="login-overlay">
   <div class="login-box">
-    <h2>Outlet PNL Dashboard</h2>
+    <h2>Access Dashboard</h2>
     <input type="text" id="loginUser" class="login-input" placeholder="Username" />
     <input type="password" id="loginPass" class="login-input" placeholder="Password" />
     <button class="login-btn" onclick="checkLogin()">Login</button>
@@ -125,7 +125,7 @@
           <div class="input-group">
             <label>Option B: Google Sheet CSV Link</label>
             <div style="display: flex; gap: 5px;">
-              <!-- DEFAULT VALUE ADDED HERE -->
+              <!-- DEFAULT VALUE -->
               <input type="text" id="urlInput" class="dash-input" 
                      value="https://docs.google.com/spreadsheets/d/e/2PACX-1vQmEpdusjykH9tHBRZzrTMJrD0AGAZK53gX5O7Evmk55tEPNwmEqfx4aeCom2lIRBwSEdJfAlnIXh2o/pub?gid=492799418&single=true&output=csv" 
                      placeholder="Paste link..." style="flex: 1;">
@@ -189,21 +189,16 @@ function checkLogin() {
   const err = document.getElementById('loginError');
 
   if (u === 'arup' && p === 'arupacill') {
-    // Success: Hide Login, Show Dashboard
     document.getElementById('login-overlay').style.display = 'none';
     document.getElementById('dashboard-wrapper').style.display = 'block';
     
-    // AUTO-LOAD DATA from the default link
-    setTimeout(() => {
-        document.getElementById('loadUrlBtn').click();
-    }, 500); // Short delay to allow UI to render
+    // Auto Load
+    setTimeout(() => { document.getElementById('loadUrlBtn').click(); }, 500);
   } else {
-    // Fail
     err.style.display = 'block';
   }
 }
 
-// Allow pressing "Enter" on password field
 document.getElementById('loginPass').addEventListener('keypress', function (e) {
     if (e.key === 'Enter') checkLogin();
 });
@@ -486,6 +481,7 @@ function renderTable() {
     return; 
   }
 
+  // Draw Header
   tableColumns.forEach(c => {
     let th = document.createElement('th');
     th.onclick = () => handleSort(c);
@@ -504,9 +500,18 @@ function renderTable() {
 
   let grand = {};
   currencyColumns.forEach(c => grand[c] = 0);
+  
+  // COUNT OUTLETS
+  let activeOutlets = 0;
 
   currentTableData.forEach(row => {
     let tr = document.createElement('tr');
+    
+    // Check sales for count
+    let salesKey = headerMap['Sales Revenue'];
+    let salesVal = salesKey ? parseNum(row[salesKey]) : 0;
+    if (salesVal !== 0) activeOutlets++;
+
     tableColumns.forEach(col => {
       let td = document.createElement('td');
       let key = headerMap[col];
@@ -529,7 +534,10 @@ function renderTable() {
   tr.className = 'total-row';
   tableColumns.forEach(col => {
     let td = document.createElement('td');
-    if (col === 'Outlet Name') td.textContent = "GRAND TOTAL";
+    
+    // Insert Count Logic Here
+    if (col === 'Outlet Name') td.textContent = `GRAND TOTAL (${activeOutlets} Active Outlets)`;
+    
     else if (currencyColumns.includes(col) && col !== 'SFT') td.textContent = formatMoney(grand[col]);
     else if (col === 'Gp %') {
       let s = grand['Sales Revenue'];
