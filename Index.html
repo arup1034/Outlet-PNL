@@ -9,7 +9,33 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
   <style>
-    body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; margin: 20px; background-color: #f8f9fa; }
+    body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; margin: 0; background-color: #f8f9fa; }
+    
+    /* --- LOGIN SCREEN STYLES --- */
+    #login-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background-color: #e9ecef; z-index: 10000;
+      display: flex; justify-content: center; align-items: center;
+    }
+    .login-box {
+      background: white; padding: 40px; border-radius: 10px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 300px; text-align: center;
+    }
+    .login-box h2 { margin-top: 0; color: #333; margin-bottom: 20px; }
+    .login-input {
+      width: 100%; padding: 10px; margin-bottom: 15px;
+      border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box;
+    }
+    .login-btn {
+      width: 100%; padding: 10px; background-color: #007bff; color: white;
+      border: none; border-radius: 5px; font-weight: bold; cursor: pointer;
+    }
+    .login-btn:hover { background-color: #0056b3; }
+    .login-error { color: #dc3545; font-size: 13px; margin-top: 10px; display: none; }
+
+    /* --- DASHBOARD STYLES --- */
+    #dashboard-wrapper { display: none; padding: 20px; }
+    
     .container { max-width: 1250px; margin: auto; }
     
     /* Status Box */
@@ -30,11 +56,12 @@
     @media (max-width: 768px) { .source-grid { grid-template-columns: 1fr; } }
     
     .input-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 13px; }
-    input, select, textarea { padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
+    /* Generic inputs inside dashboard */
+    .dash-input { padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
 
     /* Buttons */
-    button { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; font-weight: 600; font-size: 14px; transition: opacity 0.2s; }
-    button:hover { opacity: 0.9; }
+    button.dash-btn { padding: 8px 16px; cursor: pointer; border: none; border-radius: 4px; font-weight: 600; font-size: 14px; transition: opacity 0.2s; }
+    button.dash-btn:hover { opacity: 0.9; }
     .btn-blue { background-color: #007bff; color: white; }
     .btn-gray { background-color: #6c757d; color: white; }
     .btn-green { background-color: #28a745; color: white; }
@@ -44,16 +71,12 @@
     /* Table */
     .table-responsive { overflow-x: auto; border: 1px solid #ddd; border-radius: 4px; background: white; }
     table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 13px; }
-    
     th, td { padding: 8px 10px; border: 1px solid #ddd; text-align: center; }
     
-    /* Sorting Styles for Headers */
     th { 
       background-color: #e9ecef; 
       position: sticky; top: 0; z-index: 10; font-weight: 600;
-      cursor: pointer; /* Clickable cursor */
-      user-select: none; /* Prevent text selection while clicking */
-      transition: background-color 0.2s;
+      cursor: pointer; user-select: none; transition: background-color 0.2s;
     }
     th:hover { background-color: #dbe0e5; }
     th .sort-icon { font-size: 10px; margin-left: 5px; color: #666; }
@@ -69,60 +92,77 @@
 </head>
 <body>
 
-<div class="container">
-  <h2>PNL Dashboard</h2>
-  <div id="systemStatus"></div>
+<!-- 1. LOGIN SCREEN -->
+<div id="login-overlay">
+  <div class="login-box">
+    <h2>Access Dashboard</h2>
+    <input type="text" id="loginUser" class="login-input" placeholder="Username" />
+    <input type="password" id="loginPass" class="login-input" placeholder="Password" />
+    <button class="login-btn" onclick="checkLogin()">Login</button>
+    <div id="loginError" class="login-error">Invalid Username or Password</div>
+  </div>
+</div>
 
-  <!-- IMPORTS -->
-  <div class="section-box">
-    <h3>1. Import Data</h3>
-    <div class="source-grid">
-      <!-- File -->
-      <div>
-        <div class="input-group">
-          <label>Option A: Upload CSV</label>
-          <input type="file" id="fileInput" accept=".csv" style="width: 100%;">
-        </div>
-      </div>
-      <!-- URL -->
-      <div>
-        <div class="input-group">
-          <label>Option B: Google Sheet CSV Link</label>
-          <div style="display: flex; gap: 5px;">
-            <input type="text" id="urlInput" placeholder="Paste link..." style="flex: 1;">
-            <button class="btn-yellow" id="loadUrlBtn">Load Data</button>
+<!-- 2. MAIN DASHBOARD CONTENT (Hidden until login) -->
+<div id="dashboard-wrapper">
+  <div class="container">
+    <h2>PNL Dashboard</h2>
+    <div id="systemStatus"></div>
+
+    <!-- IMPORTS -->
+    <div class="section-box">
+      <h3>1. Import Data</h3>
+      <div class="source-grid">
+        <!-- File -->
+        <div>
+          <div class="input-group">
+            <label>Option A: Upload CSV</label>
+            <input type="file" id="fileInput" accept=".csv" class="dash-input" style="width: 100%;">
           </div>
-          <small style="color:#666; font-size:11px;">Paste your 'Published to web' CSV link here.</small>
+        </div>
+        <!-- URL -->
+        <div>
+          <div class="input-group">
+            <label>Option B: Google Sheet CSV Link</label>
+            <div style="display: flex; gap: 5px;">
+              <!-- DEFAULT VALUE ADDED HERE -->
+              <input type="text" id="urlInput" class="dash-input" 
+                     value="https://docs.google.com/spreadsheets/d/e/2PACX-1vQmEpdusjykH9tHBRZzrTMJrD0AGAZK53gX5O7Evmk55tEPNwmEqfx4aeCom2lIRBwSEdJfAlnIXh2o/pub?gid=492799418&single=true&output=csv" 
+                     placeholder="Paste link..." style="flex: 1;">
+              <button class="dash-btn btn-yellow" id="loadUrlBtn">Load Data</button>
+            </div>
+            <small style="color:#666; font-size:11px;">Paste your 'Published to web' CSV link here.</small>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- FILTERS -->
-  <div class="section-box">
-    <h3>2. Filters & Actions</h3>
-    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
-      <div><label>Start Month</label><br><input type="month" id="startMonth"></div>
-      <div><label>End Month</label><br><input type="month" id="endMonth"></div>
-      <div>
-        <label>Type</label><br>
-        <select id="typeFilter" style="min-width: 120px;"><option value="all">All</option></select>
-      </div>
-      <div style="margin-left:auto; display:flex; gap:8px;">
-        <button class="btn-teal" onclick="openModal()">Filter Codes <span id="codeCountLabel"></span></button>
-        <button class="btn-blue" id="applyBtn">Apply</button>
-        <button class="btn-gray" id="resetBtn">Reset</button>
-        <button class="btn-green" onclick="exportToExcel()">Export Excel</button>
+    <!-- FILTERS -->
+    <div class="section-box">
+      <h3>2. Filters & Actions</h3>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+        <div><label>Start Month</label><br><input type="month" id="startMonth" class="dash-input"></div>
+        <div><label>End Month</label><br><input type="month" id="endMonth" class="dash-input"></div>
+        <div>
+          <label>Type</label><br>
+          <select id="typeFilter" class="dash-input" style="min-width: 120px;"><option value="all">All</option></select>
+        </div>
+        <div style="margin-left:auto; display:flex; gap:8px;">
+          <button class="dash-btn btn-teal" onclick="openModal()">Filter Codes <span id="codeCountLabel"></span></button>
+          <button class="dash-btn btn-blue" id="applyBtn">Apply</button>
+          <button class="dash-btn btn-gray" id="resetBtn">Reset</button>
+          <button class="dash-btn btn-green" onclick="exportToExcel()">Export Excel</button>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- TABLE -->
-  <div class="table-responsive">
-    <table id="dataTable">
-      <thead><tr id="tableHead"></tr></thead>
-      <tbody></tbody>
-    </table>
+    <!-- TABLE -->
+    <div class="table-responsive">
+      <table id="dataTable">
+        <thead><tr id="tableHead"></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -131,16 +171,47 @@
   <div class="modal-content">
     <h3>Paste Outlet Codes</h3>
     <p style="margin-top:0; font-size:12px; color:#666;">Paste codes below (one per line, comma, or space).</p>
-    <textarea id="codeListInput" placeholder="OUT001&#10;OUT002&#10;..."></textarea>
+    <textarea id="codeListInput" class="dash-input" placeholder="OUT001&#10;OUT002&#10;..."></textarea>
     <div style="text-align: right; margin-top: 10px;">
-      <button class="btn-gray" onclick="closeModal()">Cancel</button>
-      <button class="btn-blue" onclick="saveCodeFilter()">Set Filter</button>
+      <button class="dash-btn btn-gray" onclick="closeModal()">Cancel</button>
+      <button class="dash-btn btn-blue" onclick="saveCodeFilter()">Set Filter</button>
     </div>
   </div>
 </div>
 
 <script>
-// --- CONFIGURATION ---
+// ==========================================
+// 1. AUTHENTICATION LOGIC
+// ==========================================
+function checkLogin() {
+  const u = document.getElementById('loginUser').value;
+  const p = document.getElementById('loginPass').value;
+  const err = document.getElementById('loginError');
+
+  if (u === 'arup' && p === 'arupacill') {
+    // Success: Hide Login, Show Dashboard
+    document.getElementById('login-overlay').style.display = 'none';
+    document.getElementById('dashboard-wrapper').style.display = 'block';
+    
+    // AUTO-LOAD DATA from the default link
+    setTimeout(() => {
+        document.getElementById('loadUrlBtn').click();
+    }, 500); // Short delay to allow UI to render
+  } else {
+    // Fail
+    err.style.display = 'block';
+  }
+}
+
+// Allow pressing "Enter" on password field
+document.getElementById('loginPass').addEventListener('keypress', function (e) {
+    if (e.key === 'Enter') checkLogin();
+});
+
+// ==========================================
+// 2. DASHBOARD LOGIC
+// ==========================================
+
 const tableColumns = [
   'CODE','Outlet Name','Launching Date','SFT','Sales Revenue','Gp','Gp %','Other Income',
   'Total Outlet Level Opex','% of Opex on Sales','Outlet level Gain/Loss',
@@ -156,14 +227,12 @@ const currencyColumns = [
 ];
 const percentColumns = ['Gp %','% of Opex on Sales'];
 
-// --- STATE ---
 let rawData = [];
 let activeCodes = [];
 let headerMap = {};
-let currentTableData = []; // Store aggregated data for sorting
-let sortState = { col: null, dir: 'desc' }; // Default sort state
+let currentTableData = [];
+let sortState = { col: null, dir: 'desc' };
 
-// --- UTILS ---
 function setStatus(msg, type) {
   const el = document.getElementById('systemStatus');
   el.style.display = 'block';
@@ -200,12 +269,9 @@ function formatDate(val) {
   return val;
 }
 function parseDate(val) {
-  if(!val) return 0; // Return 0 for sorting comparison
-  // ISO
+  if(!val) return 0; 
   if (/^\d{4}-\d{2}$/.test(val)) return new Date(val + "-01").getTime();
-  // Excel
   if (!isNaN(val) && val > 20000) return new Date(Math.round((val - 25569)*86400*1000)).getTime();
-  // String
   const d = new Date(val);
   return isNaN(d) ? 0 : d.getTime();
 }
@@ -340,10 +406,7 @@ function applyFilters() {
   });
 
   currentTableData = aggregateData(filtered);
-  // Re-apply current sort if active
-  if (sortState.col) {
-    applySortLogic();
-  }
+  if (sortState.col) applySortLogic();
   renderTable();
 }
 
@@ -378,14 +441,10 @@ function aggregateData(rows) {
   });
 }
 
-// --- SORTING LOGIC ---
 function handleSort(colName) {
   if (sortState.col === colName) {
-    // Toggle direction
     sortState.dir = sortState.dir === 'desc' ? 'asc' : 'desc';
   } else {
-    // New column, default to desc for numbers/dates, asc for text? 
-    // Let's default to desc (Largest to Smallest) as requested mostly for numbers
     sortState.col = colName;
     sortState.dir = 'desc';
   }
@@ -395,36 +454,28 @@ function handleSort(colName) {
 
 function applySortLogic() {
   if (!sortState.col || currentTableData.length === 0) return;
-
   const col = sortState.col;
-  const key = headerMap[col]; // This maps Display Name -> CSV Header
-  
-  // Identify type of column
+  const key = headerMap[col];
   const isNum = currencyColumns.includes(col) || percentColumns.includes(col) || col === 'SFT';
   const isDate = col === 'Launching Date';
 
   currentTableData.sort((a, b) => {
     let valA = a[key];
     let valB = b[key];
-
     if (isNum) {
-      valA = parseNum(valA);
-      valB = parseNum(valB);
+      valA = parseNum(valA); valB = parseNum(valB);
     } else if (isDate) {
-      valA = parseDate(valA);
-      valB = parseDate(valB);
+      valA = parseDate(valA); valB = parseDate(valB);
     } else {
       valA = (valA || "").toString().toLowerCase();
       valB = (valB || "").toString().toLowerCase();
     }
-
     if (valA < valB) return sortState.dir === 'asc' ? -1 : 1;
     if (valA > valB) return sortState.dir === 'asc' ? 1 : -1;
     return 0;
   });
 }
 
-// --- RENDER ---
 function renderTable() {
   const tbody = document.querySelector('#dataTable tbody');
   const thead = document.getElementById('tableHead');
@@ -435,35 +486,25 @@ function renderTable() {
     return; 
   }
 
-  // Draw Header with Sort Events
   tableColumns.forEach(c => {
     let th = document.createElement('th');
     th.onclick = () => handleSort(c);
-    
-    // Header Text
     let textSpan = document.createElement('span');
     textSpan.textContent = c;
     th.appendChild(textSpan);
-
-    // Sort Arrow
     if (sortState.col === c) {
       let arrow = document.createElement('span');
       arrow.className = 'sort-icon';
       arrow.textContent = sortState.dir === 'asc' ? '▲' : '▼';
       th.appendChild(arrow);
-    } else {
-      // Optional: Show faint placeholder or nothing
     }
-
     th.title = "Click to sort";
     thead.appendChild(th);
   });
 
-  // Calc Grand Totals
   let grand = {};
   currencyColumns.forEach(c => grand[c] = 0);
 
-  // Draw Rows
   currentTableData.forEach(row => {
     let tr = document.createElement('tr');
     tableColumns.forEach(col => {
@@ -484,7 +525,6 @@ function renderTable() {
     tbody.appendChild(tr);
   });
 
-  // Draw Grand Total Row
   let tr = document.createElement('tr');
   tr.className = 'total-row';
   tableColumns.forEach(col => {
@@ -504,7 +544,6 @@ function renderTable() {
   tbody.appendChild(tr);
 }
 
-// --- CONTROLS ---
 document.getElementById('applyBtn').onclick = applyFilters;
 document.getElementById('typeFilter').onchange = applyFilters;
 
@@ -513,10 +552,10 @@ document.getElementById('resetBtn').onclick = () => {
   document.getElementById('endMonth').value = '';
   document.getElementById('typeFilter').value = 'all';
   activeCodes = [];
-  sortState = { col: null, dir: 'desc' }; // Reset sort
+  sortState = { col: null, dir: 'desc' };
   document.getElementById('codeCountLabel').textContent = '';
   document.getElementById('codeListInput').value = '';
-  applyFilters(); // Re-runs aggregation and rendering
+  applyFilters(); 
 };
 
 function populateTypeFilter() {
@@ -531,7 +570,6 @@ function populateTypeFilter() {
   });
 }
 
-// --- MODAL ---
 const modal = document.getElementById('codeModal');
 function openModal() { modal.style.display = "block"; }
 function closeModal() { modal.style.display = "none"; }
@@ -544,7 +582,6 @@ function saveCodeFilter() {
 }
 window.onclick = e => { if(e.target==modal) closeModal(); };
 
-// --- EXPORT ---
 function exportToExcel() {
   const t = document.getElementById('dataTable');
   if(!t || t.rows.length<2) return alert("No data to export.");
