@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>PNL Dashboard</title>
-  <link rel="icon" type="image/png" sizes="32x32" href="bing.com">
+  
   <!-- SheetJS Library for Excel Export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
@@ -106,7 +106,7 @@
 <!-- 1. LOGIN SCREEN -->
 <div id="login-overlay">
   <div class="login-box">
-    <h2>Outlet PNL Dashboard</h2>
+    <h2>Access Dashboard</h2>
     <input type="text" id="loginUser" class="login-input" placeholder="Username" />
     <input type="password" id="loginPass" class="login-input" placeholder="Password" />
     <button class="login-btn" onclick="checkLogin()">Login</button>
@@ -186,7 +186,7 @@
   <div class="modal-content">
     <h3>Paste Outlet Codes</h3>
     <p style="margin-top:0; font-size:12px; color:#666;">Paste codes below (one per line, comma, or space).</p>
-    <textarea id="codeListInput" class="dash-input" placeholder="D0&#07;D0&#62;..."></textarea>
+    <textarea id="codeListInput" class="dash-input" placeholder="OUT001&#10;OUT002&#10;..."></textarea>
     <div style="text-align: right; margin-top: 10px;">
       <button class="dash-btn btn-gray" onclick="closeModal()">Cancel</button>
       <button class="dash-btn btn-blue" onclick="saveCodeFilter()">Set Filter</button>
@@ -222,11 +222,14 @@ document.getElementById('loginPass').addEventListener('keypress', function (e) {
 // 2. DASHBOARD LOGIC
 // ==========================================
 
+// Added 'S/N' at index 0
 const tableColumns = [
+  'S/N',
   'CODE','Outlet Name','Launching Date','SFT','Sales Revenue','Gp','Gp %','Other Income',
   'Total Outlet Level Opex','% of Opex on Sales','Outlet level Gain/Loss',
   'Operating Financing Cost(OFC)','Outlet level P/(L) After OFC'
 ];
+
 const sumColumns = [
   'Sales Revenue','Gp','Other Income','Total Outlet Level Opex',
   'Outlet level Gain/Loss','Operating Financing Cost(OFC)','Outlet level P/(L) After OFC'
@@ -298,6 +301,9 @@ function processCSV(text) {
   const lowerHeaders = rawHeaders.map(h => h.toLowerCase().replace(/\s/g, ''));
   
   tableColumns.forEach(col => {
+    // S/N is virtual, don't look for it in CSV
+    if (col === 'S/N') return;
+
     const search = col.toLowerCase().replace(/\s/g, '');
     const idx = lowerHeaders.indexOf(search);
     if (idx !== -1) headerMap[col] = rawHeaders[idx];
@@ -452,6 +458,9 @@ function aggregateData(rows) {
 }
 
 function handleSort(colName) {
+  // S/N is not sortable (it always shows 1,2,3...)
+  if (colName === 'S/N') return;
+
   if (sortState.col === colName) {
     sortState.dir = sortState.dir === 'desc' ? 'asc' : 'desc';
   } else {
@@ -499,17 +508,22 @@ function renderTable() {
   // Draw Header
   tableColumns.forEach(c => {
     let th = document.createElement('th');
-    th.onclick = () => handleSort(c);
+    if (c !== 'S/N') {
+      th.onclick = () => handleSort(c);
+      th.title = "Click to sort";
+    }
+    
     let textSpan = document.createElement('span');
     textSpan.textContent = c;
     th.appendChild(textSpan);
-    if (sortState.col === c) {
+
+    if (sortState.col === c && c !== 'S/N') {
       let arrow = document.createElement('span');
       arrow.className = 'sort-icon';
       arrow.textContent = sortState.dir === 'asc' ? '▲' : '▼';
       th.appendChild(arrow);
     }
-    th.title = "Click to sort";
+    
     thead.appendChild(th);
   });
 
@@ -519,7 +533,7 @@ function renderTable() {
   // COUNT OUTLETS
   let activeOutlets = 0;
 
-  currentTableData.forEach(row => {
+  currentTableData.forEach((row, index) => {
     let tr = document.createElement('tr');
     
     // Check sales for count
@@ -529,29 +543,36 @@ function renderTable() {
 
     tableColumns.forEach(col => {
       let td = document.createElement('td');
-      let key = headerMap[col];
-      let val = key ? row[key] : "";
       
-      if (col === 'Launching Date') val = formatDate(val);
-      else if (currencyColumns.includes(col)) {
-        if(key) grand[col] += parseNum(val);
-        val = formatMoney(val);
+      if (col === 'S/N') {
+        td.textContent = index + 1;
+      } else {
+        let key = headerMap[col];
+        let val = key ? row[key] : "";
+        
+        if (col === 'Launching Date') val = formatDate(val);
+        else if (currencyColumns.includes(col)) {
+          if(key) grand[col] += parseNum(val);
+          val = formatMoney(val);
+        }
+        else if (percentColumns.includes(col)) val = formatPercent(val);
+        
+        td.textContent = val;
       }
-      else if (percentColumns.includes(col)) val = formatPercent(val);
       
-      td.textContent = val;
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
   });
 
+  // GRAND TOTAL ROW
   let tr = document.createElement('tr');
   tr.className = 'total-row';
   tableColumns.forEach(col => {
     let td = document.createElement('td');
     
-    // Insert Count Logic Here
-    if (col === 'Outlet Name') td.textContent = `GRAND TOTAL (${activeOutlets} Active Outlets)`;
+    if (col === 'S/N') td.textContent = "";
+    else if (col === 'Outlet Name') td.textContent = `GRAND TOTAL (${activeOutlets} Active Outlets)`;
     
     else if (currencyColumns.includes(col) && col !== 'SFT') td.textContent = formatMoney(grand[col]);
     else if (col === 'Gp %') {
